@@ -1,6 +1,7 @@
-requests>=2.25.1
-beautifulsoup4>=4.9.3
-lxml>=4.6.3
-selenium>=4.0.0
-fake-useragent>=0.1.11 
+flask
+pandas
+numpy
+jieba
+scikit-learn
+openpyxl
 gunicorn
