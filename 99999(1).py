@@ -32,32 +32,82 @@ except Exception as e:
 
 def database():
     """创建数据库表"""
-    conn=sqlite3.connect('user_behavior.db')
-    c=conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS user_searches
-                 (user_id TEXT, play_id INTEGER, timestamp DATETIME)''')
-    conn.commit()
-    conn.close()
+    try:
+        # 使用绝对路径，确保在 Render 环境中能正确创建
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 创建 user_behavior.db
+        behavior_db_path = os.path.join(current_dir, 'user_behavior.db')
+        print(f"创建数据库: {behavior_db_path}")
+        
+        conn = sqlite3.connect(behavior_db_path)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS user_searches
+                     (user_id TEXT, play_id INTEGER, timestamp DATETIME)''')
+        conn.commit()
+        conn.close()
+        print("✅ user_behavior.db 表创建成功")
 
-    conn=sqlite3.connect('user_mapping.db')
-    c=conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS user_mapping
-                 (code TEXT PRIMARY KEY, user_id TEXT)''')
-    conn.commit()
-    conn.close()
+        # 创建 user_mapping.db
+        mapping_db_path = os.path.join(current_dir, 'user_mapping.db')
+        print(f"创建数据库: {mapping_db_path}")
+        
+        conn = sqlite3.connect(mapping_db_path)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS user_mapping
+                     (code TEXT PRIMARY KEY, user_id TEXT)''')
+        conn.commit()
+        conn.close()
+        print("✅ user_mapping.db 表创建成功")
+        
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
+        # 如果失败，尝试使用相对路径
+        try:
+            print("尝试使用相对路径创建数据库...")
+            
+            conn = sqlite3.connect('user_behavior.db')
+            c = conn.cursor()
+            c.execute('''CREATE TABLE IF NOT EXISTS user_searches
+                         (user_id TEXT, play_id INTEGER, timestamp DATETIME)''')
+            conn.commit()
+            conn.close()
+            
+            conn = sqlite3.connect('user_mapping.db')
+            c = conn.cursor()
+            c.execute('''CREATE TABLE IF NOT EXISTS user_mapping
+                         (code TEXT PRIMARY KEY, user_id TEXT)''')
+            conn.commit()
+            conn.close()
+            
+            print("✅ 使用相对路径创建数据库成功")
+            
+        except Exception as e2:
+            print(f"❌ 相对路径也失败: {e2}")
+            raise e2
 
 def get_user_id(code):
     """获取或创建用户ID"""
-    conn=sqlite3.connect('user_mapping.db')
-    c=conn.cursor()
+    try:
+        # 尝试使用绝对路径
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(current_dir, 'user_mapping.db')
+        conn = sqlite3.connect(db_path)
+    except:
+        # 如果失败，使用相对路径
+        conn = sqlite3.connect('user_mapping.db')
+    
+    c = conn.cursor()
     c.execute("SELECT user_id FROM user_mapping WHERE code=?", (code,))
-    row=c.fetchone()
+    row = c.fetchone()
     if row is not None:
+        conn.close()
         return row[0]
     else:
-        user_id=hashlib.md5(f"{code}{datetime.now()}".encode()).hexdigest()
-        c.execute("INSERT INTO user_mapping VALUES (?, ?)",(code, user_id))
+        user_id = hashlib.md5(f"{code}{datetime.now()}".encode()).hexdigest()
+        c.execute("INSERT INTO user_mapping VALUES (?, ?)", (code, user_id))
         conn.commit()
+        conn.close()
         return user_id
 
 def search_number(user_id, play_name):
@@ -81,7 +131,15 @@ def search_number(user_id, play_name):
         play_id = int(play_id)
         print(f"找到匹配的音乐剧，ID: {play_id}")
         
-        conn = sqlite3.connect('user_behavior.db')
+        try:
+            # 尝试使用绝对路径
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(current_dir, 'user_behavior.db')
+            conn = sqlite3.connect(db_path)
+        except:
+            # 如果失败，使用相对路径
+            conn = sqlite3.connect('user_behavior.db')
+        
         c = conn.cursor()
         c.execute("INSERT INTO user_searches VALUES (?, ?, ?)",
                   (user_id, play_id, datetime.now()))
@@ -152,22 +210,30 @@ np.fill_diagonal(content,0)
 def comprehensive_similarity(user_id):
     """计算协同过滤相似度"""
     try:
-        conn=sqlite3.connect('user_behavior.db')
-        c=conn.cursor()
+        try:
+            # 尝试使用绝对路径
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(current_dir, 'user_behavior.db')
+            conn = sqlite3.connect(db_path)
+        except:
+            # 如果失败，使用相对路径
+            conn = sqlite3.connect('user_behavior.db')
+        
+        c = conn.cursor()
         # 获取用户搜索记录，按时间排序，最近的记录权重更高
         c.execute("SELECT play_id, timestamp FROM user_searches WHERE user_id=? ORDER BY timestamp DESC", (user_id,))
-        rows=c.fetchall()
-        user_plays=set()
-        recent_plays=set()  # 最近3次的搜索
-        play_weights={}  # 每个剧的权重
+        rows = c.fetchall()
+        user_plays = set()
+        recent_plays = set()  # 最近3次的搜索
+        play_weights = {}  # 每个剧的权重
         
         # 统计每个音乐剧的搜索次数和最近搜索时间
         play_counts = defaultdict(int)
         play_last_seen = {}
         
         for i, row in enumerate(rows):
-            play_id=row[0]
-            timestamp=row[1]
+            play_id = row[0]
+            timestamp = row[1]
             
             # 处理字节格式的play_id
             if isinstance(play_id, bytes):
@@ -224,8 +290,16 @@ def comprehensive_similarity(user_id):
         result=np.zeros(n)
         
         # 重新连接数据库获取所有用户的搜索记录
-        conn=sqlite3.connect('user_behavior.db')
-        c=conn.cursor()
+        try:
+            # 尝试使用绝对路径
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(current_dir, 'user_behavior.db')
+            conn = sqlite3.connect(db_path)
+        except:
+            # 如果失败，使用相对路径
+            conn = sqlite3.connect('user_behavior.db')
+        
+        c = conn.cursor()
         c.execute("SELECT user_id, play_id FROM user_searches")
         all_user_searches = c.fetchall()
         conn.close()
@@ -271,8 +345,16 @@ def comprehensive_similarity(user_id):
 def recommend_top5(code: str, top_k: int = 5):
     """推荐前5个音乐剧"""
     try:
-        uid=get_user_id(code)
-        conn=sqlite3.connect('user_behavior.db')
+        uid = get_user_id(code)
+        try:
+            # 尝试使用绝对路径
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(current_dir, 'user_behavior.db')
+            conn = sqlite3.connect(db_path)
+        except:
+            # 如果失败，使用相对路径
+            conn = sqlite3.connect('user_behavior.db')
+        
         rows = conn.execute("SELECT play_id FROM user_searches WHERE user_id=?", (uid,)).fetchall()
         seen = set()
         for row in rows:
@@ -387,22 +469,26 @@ def api_search():
     """记录用户搜索行为"""
     try:
         data = request.get_json()
+        # 修改：同时接受 code 或直接的 userId
         code = data.get('code')
+        user_id = data.get('userId') # <--- 新增
         play_name = data.get('play_name')
         
-        if not code or not play_name:
-            return jsonify({'error': '缺少必要参数'}), 400
+        # 如果没有直接提供 userId，则通过 code 获取
+        if not user_id and code:
+            user_id = get_user_id(code)
         
-        user_id = get_user_id(code)
-        print(f"API - 获取到用户ID: {user_id} (code: {code})")
+        if not user_id or not play_name:
+            return jsonify({'error': '缺少 user_id 或 play_name 参数'}), 400
         
-        # 检查搜索记录是否成功
+        print(f"API - 获取到用户ID: {user_id}")
+        
         search_success = search_number(user_id, play_name)
         
         if search_success:
             return jsonify({
                 'success': True,
-                'message': f'记录用户 {code} 搜索 {play_name} 成功'
+                'message': f'记录用户 {user_id} 搜索 {play_name} 成功'
             })
         else:
             return jsonify({
@@ -419,15 +505,23 @@ def api_search():
 @app.route('/recommend', methods=['GET'])
 def api_recommend():
     """推荐API接口"""
+    # 修改：同时接受 code 或直接的 userId
     code = request.args.get('code')
-    if not code:
-        return jsonify({'error': '缺少 code 参数'}), 400
+    user_id = request.args.get('userId') # <--- 新增
+
+    # 如果没有直接提供 userId，则通过 code 获取
+    if not user_id and code:
+        user_id = get_user_id(code)
+
+    if not user_id:
+        return jsonify({'error': '缺少 user_id 或 code 参数'}), 400
     
     try:
-        top5 = recommend_top5(code)
+        # 修改：直接传递 user_id 给推荐函数
+        top5 = recommend_top5(user_id) # <--- 修改
         return jsonify({
             'success': True,
-            'recommendations': top5,  # 修改字段名以匹配测试脚本
+            'recommendations': top5,
             'total': len(top5)
         })
     except Exception as e:
@@ -435,7 +529,6 @@ def api_recommend():
             'success': False,
             'error': str(e)
         }), 500
-
 @app.route('/health', methods=['GET'])
 def health_check():
     """健康检查接口"""
@@ -447,7 +540,20 @@ def health_check():
 
 if __name__ == '__main__':
     print("初始化推荐系统...")
-    database()
+    
+    # 确保数据库表存在
+    try:
+        database()
+        print("✅ 数据库初始化完成")
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
+        print("尝试继续启动服务...")
+    
     print(f"数据加载完成，共{len(df)}条记录")
     print("启动Flask服务...")
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    
+    # 修改：端口改为 Render 需要的 $PORT
+    port = int(os.environ.get("PORT", 3000))
+    print(f"服务将在端口 {port} 上启动")
+    
+    app.run(host='0.0.0.0', port=port)
