@@ -11,24 +11,36 @@ from collections import defaultdict
 import hashlib
 import sqlite3
 
-excel_file_path = r"C:\Users\HUAWEI\WeChatProjects\miniprogram-2\音乐剧元数据3_转换后_20250810_035559.xlsx"
+# 尝试读取Excel文件，支持多种路径
+excel_file_paths = [
+    "音乐剧元数据3_转换后_20250810_035559.xlsx",  # 相对路径
+    "音乐剧元数据3_转换后.xlsx",  # 备用文件名
+    "音乐剧元数据3.xlsx"  # 另一个备用文件名
+]
 
-# 尝试读取Excel文件
-try:
-    # 读取Excel文件的第一个工作表
-    df = pd.read_excel(excel_file_path, sheet_name=0, usecols=['剧名','导演','剧种','题材','地域','情绪'])
-    print(f"成功读取Excel文件，共{len(df)}条记录")
-except Exception as e:
-    print(f"读取Excel文件失败: {e}")
-    # 如果Excel读取失败，尝试使用原始数据
+df = None
+for excel_file_path in excel_file_paths:
+    try:
+        print(f"尝试读取Excel文件: {excel_file_path}")
+        df = pd.read_excel(excel_file_path, sheet_name=0, usecols=['剧名','导演','剧种','题材','地域','情绪'])
+        print(f"✅ 成功读取Excel文件: {excel_file_path}，共{len(df)}条记录")
+        break
+    except Exception as e:
+        print(f"❌ 读取Excel文件失败: {excel_file_path} - {e}")
+        continue
+
+# 如果所有Excel文件都读取失败，使用内置数据
+if df is None:
+    print("⚠️ 所有Excel文件读取失败，使用内置数据")
     df = pd.DataFrame({
-        '剧名': ['悲惨世界', '歌剧魅影', '猫'],
-        '导演': ['克劳德-米歇尔·勋伯格', '安德鲁·劳埃德·韦伯', 'Trevor Nunn'],
-        '剧种': ['音乐剧', '音乐剧', '音乐剧'],
-        '题材': ['革命·救赎', '爱情·疯癫', '群像·生命赞歌'],
-        '地域': ['法式', '法式', '百老汇'],
-        '情绪': ['悲壮', '悲剧', '悲喜交织']
+        '剧名': ['悲惨世界', '歌剧魅影', '猫', '西贡小姐', '芝加哥', '妈妈咪呀', '狮子王', '美女与野兽', '阿拉丁', '小美人鱼'],
+        '导演': ['克劳德-米歇尔·勋伯格', '安德鲁·劳埃德·韦伯', 'Trevor Nunn', '克劳德-米歇尔·勋伯格', 'Bob Fosse', 'Phyllida Lloyd', 'Julie Taymor', 'Alan Menken', 'Alan Menken', 'Alan Menken'],
+        '剧种': ['音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧', '音乐剧'],
+        '题材': ['革命·救赎', '爱情·疯癫', '群像·生命赞歌', '战争·爱情', '犯罪·歌舞', '亲情·音乐', '成长·冒险', '爱情·魔法', '冒险·魔法', '爱情·海洋'],
+        '地域': ['法式', '法式', '百老汇', '法式', '美式', '英式', '美式', '美式', '美式', '美式'],
+        '情绪': ['悲壮', '悲剧', '悲喜交织', '悲壮', '喜剧', '温馨', '励志', '温馨', '冒险', '温馨']
     })
+    print(f"✅ 使用内置数据，共{len(df)}条记录")
 
 def database():
     """创建数据库表"""
@@ -342,10 +354,10 @@ def comprehensive_similarity(user_id):
         # 如果出错，返回基于内容的推荐
         return content.mean(axis=0)
 
-def recommend_top5(code: str, top_k: int = 5):
+def recommend_top5(user_id: str, top_k: int = 5):
     """推荐前5个音乐剧"""
     try:
-        uid = get_user_id(code)
+        uid = user_id  # 直接使用传入的user_id
         try:
             # 尝试使用绝对路径
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -497,6 +509,9 @@ def api_search():
             }), 404
             
     except Exception as e:
+        print(f"搜索API错误: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -505,26 +520,38 @@ def api_search():
 @app.route('/recommend', methods=['GET'])
 def api_recommend():
     """推荐API接口"""
-    # 修改：同时接受 code 或直接的 userId
-    code = request.args.get('code')
-    user_id = request.args.get('userId') # <--- 新增
-
-    # 如果没有直接提供 userId，则通过 code 获取
-    if not user_id and code:
-        user_id = get_user_id(code)
-
-    if not user_id:
-        return jsonify({'error': '缺少 user_id 或 code 参数'}), 400
-    
     try:
-        # 修改：直接传递 user_id 给推荐函数
-        top5 = recommend_top5(user_id) # <--- 修改
+        # 获取参数
+        code = request.args.get('code')
+        user_id = request.args.get('userId')
+
+        # 如果没有直接提供 userId，则通过 code 获取
+        if not user_id and code:
+            try:
+                user_id = get_user_id(code)
+                print(f"通过code获取到user_id: {user_id}")
+            except Exception as e:
+                print(f"获取user_id失败: {e}")
+                return jsonify({'error': f'获取用户ID失败: {str(e)}'}), 400
+
+        if not user_id:
+            return jsonify({'error': '缺少 user_id 或 code 参数'}), 400
+        
+        print(f"开始为用户 {user_id} 计算推荐...")
+        
+        # 调用推荐函数
+        top5 = recommend_top5(user_id)
+        print(f"推荐计算完成，返回 {len(top5)} 个推荐")
+        
         return jsonify({
             'success': True,
-            'recommendations': top5,
+            'data': top5,
             'total': len(top5)
         })
     except Exception as e:
+        print(f"推荐API错误: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -532,11 +559,40 @@ def api_recommend():
 @app.route('/health', methods=['GET'])
 def health_check():
     """健康检查接口"""
-    return jsonify({
-        'status': 'healthy',
-        'total_plays': len(df),
-        'timestamp': datetime.now().isoformat()
-    })
+    try:
+        # 检查数据库连接
+        db_status = "unknown"
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            behavior_db_path = os.path.join(current_dir, 'user_behavior.db')
+            conn = sqlite3.connect(behavior_db_path)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM user_searches")
+            search_count = c.fetchone()[0]
+            conn.close()
+            db_status = "connected"
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+            search_count = 0
+        
+        return jsonify({
+            'status': 'healthy',
+            'data_loaded': len(df) if df is not None else 0,
+            'database_status': db_status,
+            'search_records': search_count,
+            'timestamp': datetime.now().isoformat(),
+            'environment': {
+                'python_version': f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+                'working_directory': os.getcwd(),
+                'files_in_dir': len([f for f in os.listdir('.') if f.endswith('.xlsx')])
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 if __name__ == '__main__':
     print("初始化推荐系统...")
